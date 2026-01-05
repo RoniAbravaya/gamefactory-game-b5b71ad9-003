@@ -1,20 +1,25 @@
 import 'package:flame/components.dart';
-import 'package:flame/input.dart';
 import 'package:flame/sprite.dart';
+import 'package:testLast-puzzle-03/game_objects/obstacle.dart';
+import 'package:testLast-puzzle-03/game_objects/collectable.dart';
 
-/// The player character in the puzzle game.
-class Player extends SpriteAnimationComponent with HasGameRef, Collidable {
-  /// The player's current health or lives.
-  int _health = 3;
+/// The Player component for the puzzle game.
+class Player extends SpriteAnimationComponent with CollisionCallbacks {
+  /// The player's current health.
+  int _health = 100;
 
-  /// The player's current score.
-  int _score = 0;
+  /// The duration of invulnerability frames after taking damage.
+  static const double _invulnerabilityDuration = 1.0;
 
-  /// Initializes the player component.
-  Player({
-    required Vector2 position,
-    required Vector2 size,
-  }) : super(
+  /// The timer for invulnerability frames.
+  double _invulnerabilityTimer = 0.0;
+
+  /// Whether the player is currently invulnerable.
+  bool get isInvulnerable => _invulnerabilityTimer > 0.0;
+
+  /// Constructs a new Player instance.
+  Player(Vector2 position, Vector2 size)
+      : super(
           position: position,
           size: size,
           anchor: Anchor.center,
@@ -23,14 +28,13 @@ class Player extends SpriteAnimationComponent with HasGameRef, Collidable {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-
-    // Load the player's sprite animation
-    animation = await gameRef.loadSpriteAnimation(
+    // Load player sprite animation
+    animation = await loadSpriteAnimation(
       'player.png',
       SpriteAnimationData.sequenced(
         amount: 4,
         stepTime: 0.15,
-        textureSize: Vector2.all(32),
+        textureSize: Vector2.all(32.0),
       ),
     );
   }
@@ -38,45 +42,41 @@ class Player extends SpriteAnimationComponent with HasGameRef, Collidable {
   @override
   void update(double dt) {
     super.update(dt);
-
-    // Update player movement and physics based on input
-    handleInput(dt);
-  }
-
-  /// Handles player input and updates the player's movement and state.
-  void handleInput(double dt) {
-    // Implement player movement and jump logic based on input
-    if (gameRef.keyboard.isPressed(LogicalKeyboardKey.space)) {
-      // Jump
-      velocity.y = -300;
+    // Update invulnerability timer
+    if (_invulnerabilityTimer > 0.0) {
+      _invulnerabilityTimer -= dt;
     }
-
-    // Apply gravity
-    velocity.y += 1000 * dt;
-
-    // Update player position
-    position.add(velocity * dt);
   }
 
+  /// Handles player movement.
+  void move(Vector2 direction) {
+    position += direction * 200 * dt;
+  }
+
+  /// Handles player collision with obstacles.
   @override
-  void onCollision(Set<Vector2> intersectionPoints, Collidable other) {
-    super.onCollision(intersectionPoints, other);
-
-    // Handle player collisions
+  void onCollision(Set<Vector2> intersectionPoints, PositionComponent other) {
     if (other is Obstacle) {
-      // Reduce player health or handle collision with an obstacle
-      _health--;
+      // Handle collision with obstacle
+      takeDamage(10);
     }
   }
 
-  /// Increases the player's score by the given amount.
-  void increaseScore(int amount) {
-    _score += amount;
+  /// Handles player collision with collectables.
+  @override
+  void onCollisionEnd(PositionComponent other) {
+    if (other is Collectable) {
+      // Handle collision with collectable
+      other.collect();
+    }
   }
 
-  /// Returns the player's current health or lives.
-  int get health => _health;
-
-  /// Returns the player's current score.
-  int get score => _score;
+  /// Reduces the player's health by the specified amount.
+  void takeDamage(int amount) {
+    if (!isInvulnerable) {
+      _health = (_health - amount).clamp(0, 100);
+      _invulnerabilityTimer = _invulnerabilityDuration;
+      // Handle player death or other consequences
+    }
+  }
 }

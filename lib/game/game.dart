@@ -1,159 +1,109 @@
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
-import 'package:testLast-puzzle-03/components/player.dart';
-import 'package:testLast-puzzle-03/components/obstacle.dart';
-import 'package:testLast-puzzle-03/components/collectible.dart';
-import 'package:testLast-puzzle-03/services/analytics.dart';
-import 'package:testLast-puzzle-03/services/ads.dart';
-import 'package:testLast-puzzle-03/services/storage.dart';
+import 'package:flutter/material.dart';
+
+import 'analytics_service.dart';
+import 'game_controller.dart';
+import 'level_config.dart';
+import 'player.dart';
 
 /// The main game class for the 'testLast-puzzle-03' puzzle game.
 class testLast-puzzle-03Game extends FlameGame with TapDetector {
   /// The current game state.
-  GameState _gameState = GameState.playing;
+  GameState gameState = GameState.playing;
 
-  /// The player component.
-  late Player _player;
+  /// The player object.
+  late Player player;
 
-  /// The list of obstacle components.
-  final List<Obstacle> _obstacles = [];
-
-  /// The list of collectible components.
-  final List<Collectible> _collectibles = [];
-
-  /// The current score.
-  int _score = 0;
+  /// The game controller.
+  late GameController gameController;
 
   /// The analytics service.
-  final AnalyticsService _analyticsService = AnalyticsService();
+  late AnalyticsService analyticsService;
 
-  /// The ads service.
-  final AdsService _adsService = AdsService();
+  /// The current level configuration.
+  late LevelConfig levelConfig;
 
-  /// The storage service.
-  final StorageService _storageService = StorageService();
+  /// The player's score.
+  int score = 0;
+
+  /// The player's remaining lives.
+  int lives = 3;
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
+    // Set up the camera and world
+    camera.viewport = FixedResolutionViewport(Vector2(720, 1280));
+    camera.followComponent(player);
 
-    // Load the first level
-    await _loadLevel(1);
+    // Load the level configuration
+    levelConfig = await LevelConfig.load('level_1.json');
 
-    // Register for tap input
-    camera.addInputs([this]);
-  }
+    // Initialize the player
+    player = Player(levelConfig.playerStartPosition);
+    add(player);
 
-  /// Loads the specified level.
-  Future<void> _loadLevel(int levelNumber) async {
-    // Clear existing components
-    _player = Player();
-    _obstacles.clear();
-    _collectibles.clear();
+    // Initialize the game controller
+    gameController = GameController(this);
+    add(gameController);
 
-    // Load level data
-    await _loadLevelData(levelNumber);
-
-    // Add components to the game
-    add(_player);
-    _obstacles.forEach(add);
-    _collectibles.forEach(add);
-
-    // Reset the score
-    _score = 0;
-
-    // Set the game state to playing
-    _gameState = GameState.playing;
-
-    // Notify analytics
-    _analyticsService.logLevelStart(levelNumber);
+    // Initialize the analytics service
+    analyticsService = AnalyticsService();
   }
 
   @override
   void onTapDown(TapDownInfo info) {
-    // Handle tap input
-    if (_gameState == GameState.playing) {
-      _player.jump();
-    }
+    // Handle player input
+    player.jump();
   }
 
-  /// Updates the game state and handles game logic.
   @override
   void update(double dt) {
     super.update(dt);
 
-    switch (_gameState) {
+    // Update game state
+    switch (gameState) {
       case GameState.playing:
-        // Update player and check for collisions
-        _player.update(dt);
-        _checkCollisions();
-
-        // Check for level completion
-        if (_isLevelComplete()) {
-          _gameState = GameState.levelComplete;
-          _analyticsService.logLevelComplete(_score);
-          _storageService.saveHighScore(_score);
-        }
-        break;
-      case GameState.levelComplete:
-        // Show level complete UI and handle progression
-        _showLevelCompleteUI();
-        break;
-      case GameState.gameOver:
-        // Show game over UI and handle retry
-        _showGameOverUI();
+        // Update player and game objects
         break;
       case GameState.paused:
-        // Handle paused state
+        // Pause the game
+        break;
+      case GameState.gameOver:
+        // Handle game over
+        break;
+      case GameState.levelComplete:
+        // Handle level completion
         break;
     }
   }
 
-  /// Checks for collisions between the player, obstacles, and collectibles.
-  void _checkCollisions() {
-    // Check for collisions with obstacles
-    for (final obstacle in _obstacles) {
-      if (_player.isColliding(obstacle)) {
-        _gameState = GameState.gameOver;
-        _analyticsService.logLevelFail();
-        break;
+  void _handleCollision(Player player, GameObject other) {
+    // Handle collisions between the player and other game objects
+    if (other is Obstacle) {
+      // Reduce player's lives
+      lives--;
+      if (lives <= 0) {
+        gameState = GameState.gameOver;
+        analyticsService.logEvent('level_fail');
       }
-    }
-
-    // Check for collisions with collectibles
-    for (final collectible in _collectibles) {
-      if (_player.isColliding(collectible)) {
-        _collectibles.remove(collectible);
-        _score += collectible.value;
-        _analyticsService.logCollectiblePickup(collectible.value);
-      }
+    } else if (other is Collectable) {
+      // Increase player's score
+      score += other.value;
+      other.collected = true;
     }
   }
 
-  /// Checks if the current level is complete.
-  bool _isLevelComplete() {
-    // Check if all collectibles have been collected
-    return _collectibles.isEmpty;
+  void _handleLevelComplete() {
+    // Handle level completion
+    gameState = GameState.levelComplete;
+    analyticsService.logEvent('level_complete');
   }
 
-  /// Loads the level data for the specified level number.
-  Future<void> _loadLevelData(int levelNumber) async {
-    // Load level data from storage or other source
-    // and create the player, obstacles, and collectibles
-  }
-
-  /// Shows the level complete UI and handles progression.
-  void _showLevelCompleteUI() {
-    // Show the level complete UI
-    // Handle level progression (unlock next level, show ads, etc.)
-    _adsService.showRewardedAd();
-  }
-
-  /// Shows the game over UI and handles retries.
-  void _showGameOverUI() {
-    // Show the game over UI
-    // Handle retries (reset level, show ads, etc.)
-    _adsService.showRewardedAd();
+  void _handleGameOver() {
+    // Handle game over
+    gameState = GameState.gameOver;
+    analyticsService.logEvent('level_fail');
   }
 }
 
